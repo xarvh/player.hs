@@ -3,6 +3,34 @@ import qualified System.IO as SIO
 import qualified System.Posix.Terminal as T
 
 
+type Track = String
+type TrackList = [Track]
+
+
+
+
+
+data Action
+    = PlayTrack Track
+    | PrintString String
+    | Quit
+
+
+
+
+interface :: Char -> Action
+interface 'q' = Quit
+interface c = PlayTrack (show c)
+
+
+
+
+
+
+
+
+
+
 termRecipe = [ (T.withoutMode, T.EnableEcho) ]
 
 
@@ -22,7 +50,10 @@ main = do
         loop :: IO ()
         loop = do
             key <- SIO.getChar
-            if key == 'q' then return ()
-            else do
-                SIO.putStrLn ("pressed: " ++ (show key))
-                loop
+
+            case interface key of
+                PlayTrack t -> do
+                    SIO.putStrLn ("pressed: " ++ t)
+                    loop
+                Quit -> return ()
+                _ -> loop
