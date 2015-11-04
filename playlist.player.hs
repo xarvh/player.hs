@@ -1,4 +1,5 @@
 
+import qualified System.Exit as Exit
 import qualified System.IO as SIO
 import qualified System.Posix.Terminal as T
 
@@ -26,18 +27,18 @@ interface 'q' = Quit
 interface c = PlayTrack (show c)
 
 
-control :: IO Bool
+control :: IO ()
 control = do
     key <- SIO.getChar
     case interface key of
 
-        Quit -> return False
+        Quit -> do
+            Exit.exitWith Exit.ExitSuccess
 
         PlayTrack t -> do
             SIO.putStrLn ("play track: " ++ t)
-            return True
 
-        _ -> return True
+        _ -> return ()
 
 
 cookTerminal :: IO ()
@@ -60,6 +61,4 @@ main = do
 
     where
         loop :: IO ()
-        loop = do
-            continue <- control
-            if continue then loop else return ()
+        loop = control >> loop
