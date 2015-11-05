@@ -1,4 +1,5 @@
 
+import qualified System.Environment as SE
 import qualified System.Exit as Exit
 import qualified System.IO as SIO
 import qualified System.Posix.Terminal as T
@@ -7,6 +8,11 @@ import qualified System.Posix.Terminal as T
 type Track = String
 type TrackList = [Track]
 
+data State = State {
+    trackList :: TrackList,
+    currentTrackIndex :: Int
+}
+
 data Action
     = Quit
     | DoNothing
@@ -14,31 +20,29 @@ data Action
     | Message String
 
 
-{- How to keep state?
 
-State required:
-    track list
-    current track index
--}
-
-
-interface :: Char -> Action
-interface 'q' = Quit
-interface c = PlayTrack (show c)
+interface :: State -> Char -> (State, Action)
+interface state 'q' = (state, Quit)
+interface state c = (state, PlayTrack (show c))
+-- interface (State trackList currentTrackIndex) c = ((State trackList currentTrackIndex), PlayTrack (show c))
 
 
-control :: IO ()
-control = do
+control :: State -> IO State
+control state = do
+
     key <- SIO.getChar
-    case interface key of
 
-        Quit -> do
-            Exit.exitWith Exit.ExitSuccess
+    let (state, action) = interface state key in do
+        case action of
+            Quit -> do
+                Exit.exitWith Exit.ExitSuccess
 
-        PlayTrack t -> do
-            SIO.putStrLn ("play track: " ++ t)
+            PlayTrack t -> do
+                SIO.putStrLn ("play track: " ++ t)
 
-        _ -> return ()
+            _ -> return ()
+
+        return state
 
 
 cookTerminal :: IO ()
@@ -56,9 +60,18 @@ cookTerminal = do
 
 
 main = do
+    args <- SE.getArgs
+
+    playlist <- case args of
+        [playlistFilename] -> SIO.readFile playlistFilename
+        _ -> usage >> Exit.exitWith Exit.ExitSuccess
+
     cookTerminal
-    loop
+    putStrLn "[debug]: ready"
+    loop $ State (lines playlist) 0
 
     where
-        loop :: IO ()
-        loop = control >> loop
+        loop :: State -> IO State
+        loop state = control state >>= loop
+
+        usage = putStrLn "Usage: playlist.player [playlist file]"
