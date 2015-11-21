@@ -1,9 +1,11 @@
-
 import qualified Data.ByteString.Char8 as BS
 import qualified System.Environment as SE
 import qualified System.Exit as Exit
 import qualified System.IO as SIO
 import qualified System.Posix.Terminal as T
+
+
+usage = "Usage: playlist.player [playlist file]"
 
 
 type Track = BS.ByteString
@@ -21,10 +23,11 @@ currentTrack (State trackList currentTrackIndex) = trackList !! currentTrackInde
 data Action
     = Quit
     | DoNothing
-    | PlayNewTrack
+    | PlayNewTrack Track
     | Message String
 
 
+-- abusing closures?
 interface :: State -> Char -> (State, Action)
 interface state@(State trackList currentTrackIndex) c = case c of
 
@@ -34,34 +37,21 @@ interface state@(State trackList currentTrackIndex) c = case c of
     ' ' -> moveTrackIndex 1
     'r' -> moveTrackIndex 0
     'p' -> moveTrackIndex (-1)
-    _ -> ((State trackList currentTrackIndex), DoNothing)
+    _ -> (state, DoNothing)
 
     where
         moveTrackIndex delta = moveTrackIndex' (currentTrackIndex + delta)
         moveTrackIndex' newIndex | newIndex >= length trackList  = ((State trackList 0), Quit)
-        moveTrackIndex' newIndex | newIndex < 0                  = ((State trackList 0), PlayNewTrack)
-        moveTrackIndex' newIndex | otherwise                     = ((State trackList newIndex), PlayNewTrack)
+        moveTrackIndex' newIndex | newIndex < 0                  = moveTrackIndex'' 0
+        moveTrackIndex' newIndex | otherwise                     = moveTrackIndex'' newIndex
+        moveTrackIndex'' newIndex = let newState = State trackList newIndex in (newState, PlayNewTrack $ currentTrack newState)
 
 
-control :: State -> IO State
-control state = do
-
-    key <- SIO.getChar
-
-    let (newState, action) = interface state key in do
-        case action of
-            Quit -> do
-                Exit.exitWith Exit.ExitSuccess
-
-            PlayNewTrack -> do
-                SIO.putStrLn ("play track: " ++ show (currentTrack newState))
-
-            Message message ->
-                SIO.putStrLn message
-
-            _ -> return ()
-
-        return newState
+doAction :: Action -> IO ()
+doAction Quit = Exit.exitWith Exit.ExitSuccess
+doAction (PlayNewTrack track) = SIO.putStrLn ("play track: " ++ show track)
+doAction (Message message) = SIO.putStrLn message
+doAction _ = return ()
 
 
 cookTerminal :: IO ()
@@ -78,20 +68,21 @@ cookTerminal = do
         applyRecipeStep (fn, target) attr = fn attr target
 
 
+loop :: (State, Action) -> IO ()
+loop (state, action) = do
+    doAction action
+    key <- SIO.getChar
+    loop $ interface state key
+
+
 main = do
     args <- SE.getArgs
 
     playlist <- case args of
         [playlistFilename] -> BS.readFile playlistFilename
-        _ -> usage >> Exit.exitWith Exit.ExitSuccess
+        _ -> putStrLn usage >> Exit.exitWith Exit.ExitSuccess
 
     cookTerminal
---     putStrLn "[debug]: ready"
 
-    loop $ State (BS.lines playlist) 0
-
-    where
-        loop :: State -> IO State
-        loop state = control state >>= loop
-
-        usage = putStrLn "Usage: playlist.player [playlist file]"
+    let state0 = State (BS.lines playlist) 0
+    loop $ interface state0 'r' -- not too happy about simulating 'r' keypress
