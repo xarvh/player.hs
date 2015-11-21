@@ -1,11 +1,12 @@
 
+import qualified Data.ByteString.Char8 as BS
 import qualified System.Environment as SE
 import qualified System.Exit as Exit
 import qualified System.IO as SIO
 import qualified System.Posix.Terminal as T
 
 
-type Track = String
+type Track = BS.ByteString
 type TrackList = [Track]
 
 data State = State {
@@ -13,18 +14,33 @@ data State = State {
     currentTrackIndex :: Int
 }
 
+currentTrack :: State -> Track
+currentTrack (State trackList currentTrackIndex) = trackList !! currentTrackIndex
+
+
 data Action
     = Quit
     | DoNothing
-    | PlayTrack Track
+    | PlayNewTrack
     | Message String
 
 
-
 interface :: State -> Char -> (State, Action)
-interface state 'q' = (state, Quit)
-interface state c = (state, PlayTrack (show c))
--- interface (State trackList currentTrackIndex) c = ((State trackList currentTrackIndex), PlayTrack (show c))
+interface state@(State trackList currentTrackIndex) c = case c of
+
+    'q' -> (state, Quit)
+    '?' -> (state, Message . show . currentTrack $ state)
+    'n' -> moveTrackIndex 1
+    ' ' -> moveTrackIndex 1
+    'r' -> moveTrackIndex 0
+    'p' -> moveTrackIndex (-1)
+    _ -> ((State trackList currentTrackIndex), DoNothing)
+
+    where
+        moveTrackIndex delta = moveTrackIndex' (currentTrackIndex + delta)
+        moveTrackIndex' newIndex | newIndex >= length trackList  = ((State trackList 0), Quit)
+        moveTrackIndex' newIndex | newIndex < 0                  = ((State trackList 0), PlayNewTrack)
+        moveTrackIndex' newIndex | otherwise                     = ((State trackList newIndex), PlayNewTrack)
 
 
 control :: State -> IO State
@@ -32,17 +48,20 @@ control state = do
 
     key <- SIO.getChar
 
-    let (state, action) = interface state key in do
+    let (newState, action) = interface state key in do
         case action of
             Quit -> do
                 Exit.exitWith Exit.ExitSuccess
 
-            PlayTrack t -> do
-                SIO.putStrLn ("play track: " ++ t)
+            PlayNewTrack -> do
+                SIO.putStrLn ("play track: " ++ show (currentTrack newState))
+
+            Message message ->
+                SIO.putStrLn message
 
             _ -> return ()
 
-        return state
+        return newState
 
 
 cookTerminal :: IO ()
@@ -63,12 +82,13 @@ main = do
     args <- SE.getArgs
 
     playlist <- case args of
-        [playlistFilename] -> SIO.readFile playlistFilename
+        [playlistFilename] -> BS.readFile playlistFilename
         _ -> usage >> Exit.exitWith Exit.ExitSuccess
 
     cookTerminal
-    putStrLn "[debug]: ready"
-    loop $ State (lines playlist) 0
+--     putStrLn "[debug]: ready"
+
+    loop $ State (BS.lines playlist) 0
 
     where
         loop :: State -> IO State
